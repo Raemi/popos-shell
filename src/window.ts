@@ -46,6 +46,9 @@ enum RESTACK_SPEED {
     NORMAL = 200,
 }
 
+// Delay queued moves after unmaximize to avoid Mutter resize accounting conflicts.
+const UNMAXIMIZE_MOVE_DELAY_MS = 32;
+
 interface X11Info {
     normal_hints: once_cell.OnceCell<lib.SizeHint | null>;
     wm_role_: once_cell.OnceCell<string | null>;
@@ -369,14 +372,15 @@ export class ShellWindow {
 
         const clone = Rect.Rectangle.from_meta(rect);
         const meta = this.meta;
-        const actor = meta.get_compositor_private();
+        const queue_move = () => {
+            const actor = meta.get_compositor_private();
 
-        if (actor) {
-            if (this.is_maximized()) {
-                meta.unmaximize();
+            if (!actor) {
+                if (on_complete) on_complete();
+                return;
             }
-            actor.remove_all_transitions();
 
+            actor.remove_all_transitions();
             ext.movements.insert(this.entity, clone);
 
             ext.register({ tag: 2, window: this, kind: { tag: 1 } });
@@ -385,6 +389,19 @@ export class ShellWindow {
                 this.update_border_layout();
                 ext.show_border_on_focused();
             }
+        };
+
+        if (meta.get_compositor_private()) {
+            if (this.is_maximized()) {
+                meta.unmaximize();
+                GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNMAXIMIZE_MOVE_DELAY_MS, () => {
+                    queue_move();
+                    return false;
+                });
+                return;
+            }
+
+            queue_move();
         }
     }
 
