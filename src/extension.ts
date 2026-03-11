@@ -942,13 +942,16 @@ export class Ext extends Ecs.System<ExtEvent> {
         if (this.auto_tiler) {
             if (!this.auto_tiler.attached.contains(window)) {
                 this.windows.with(window, (w) => {
-                    if (w.prev_rect === null) {
+                    // Keep the old fallback rectangle when this is a transactional
+                    // detach+reattach (for example keyboard monitor/workspace moves).
+                    if (w.prev_rect === null && !w.ignore_detach) {
                         w.prev_rect = w.meta.get_frame_rect();
                     }
                 });
             }
 
             this.auto_tiler.attached.insert(window, entity);
+            this.windows.with(window, (w) => (w.ignore_detach = false));
         }
     }
 
@@ -1563,6 +1566,7 @@ export class Ext extends Ecs.System<ExtEvent> {
                     win.ignore_detach = true;
                     this.monitors.insert(win.entity, [cto, workspace]);
                     this.auto_tiler?.detach_window(this, win.entity);
+                    win.ignore_detach = false;
                 }
             });
         } else {
