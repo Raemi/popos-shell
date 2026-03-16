@@ -14,7 +14,12 @@ export function log_level() {
     // log.js is at the level of prefs.js where the popshell Ext instance
     // is not yet available or visible, so we have to use the built in
     // ExtensionUtils to get the current settings
-    let settings = globalThis.popShellExtension.getSettings();
+    const extension = globalThis.popShellExtension;
+    if (!extension || typeof extension.getSettings !== 'function') {
+        return LOG_LEVELS.OFF;
+    }
+
+    let settings = extension.getSettings();
     let log_level = settings.get_uint('log-level');
 
     return log_level;

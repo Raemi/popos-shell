@@ -483,9 +483,17 @@ export class Tiler {
 
     rect_by_active_area(ext: Ext, callback: (monitor: Rectangle, area: Rectangle) => void) {
         if (this.window) {
-            const monitor_id = ext.monitors.get(this.window);
-            if (monitor_id) {
-                const monitor = ext.monitor_work_area(monitor_id[0]);
+            const win = ext.windows.get(this.window);
+            if (win) {
+                const current = win.rect();
+                const monitor_rect = new Meta.Rectangle({
+                    x: current.x,
+                    y: current.y,
+                    width: current.width,
+                    height: current.height,
+                });
+                const monitor_id = global.display.get_monitor_index_for_rect(monitor_rect);
+                const monitor = ext.monitor_work_area(monitor_id);
                 let rect = this.rect(ext, monitor);
 
                 if (rect) {

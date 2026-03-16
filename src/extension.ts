@@ -335,6 +335,12 @@ export class Ext extends Ecs.System<ExtEvent> {
 
                     window.meta.move_resize_frame(true, x, y, width, height);
                     window.meta.move_frame(true, x, y);
+                    // Mutter may apply the monitor jump first and delay the size
+                    // update on cross-monitor tile moves, so retry once shortly
+                    // after the initial request if the final geometry mismatches.
+                    if (!window.rect().eq(movement)) {
+                        this.retry_window_move(window, movement);
+                    }
 
                     this.monitors.insert(window.entity, [win.meta.get_monitor(), win.workspace_id()]);
 
@@ -1228,6 +1234,20 @@ export class Ext extends Ecs.System<ExtEvent> {
         }
 
         return true;
+    }
+
+    private retry_window_move(window: Window.ShellWindow, movement: Rectangular) {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+            const actor = window.meta.get_compositor_private();
+            if (!actor) return false;
+
+            // Re-issue the full move+resize after the monitor transition settles.
+            actor.remove_all_transitions();
+            const { x, y, width, height } = movement;
+            window.meta.move_resize_frame(true, x, y, width, height);
+            window.meta.move_frame(true, x, y);
+            return false;
+        });
     }
 
     workspace_window_move(win: Window.ShellWindow, prev_monitor: number, next_monitor: number) {
