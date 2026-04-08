@@ -64,6 +64,11 @@ export class ShellWindow {
     grab: boolean = false;
     activate_after_move: boolean = false;
     ignore_detach: boolean = false;
+    move_generation: number = 0;
+    monitor_move_generation: number = 0;
+    pending_move_retry: number | null = null;
+    pending_monitor_move: { generation: number; monitor: number; workspace: number } | null = null;
+    suppress_maximize_detach: boolean = false;
     was_attached_to?: [Entity, boolean | number];
     destroying: boolean = false;
 
@@ -372,7 +377,21 @@ export class ShellWindow {
 
         const clone = Rect.Rectangle.from_meta(rect);
         const meta = this.meta;
+        const generation = ++this.move_generation;
+        if (this.pending_move_retry !== null) {
+            try {
+                GLib.source_remove(this.pending_move_retry);
+            } catch (_) { }
+
+            this.pending_move_retry = null;
+        }
+
         const queue_move = () => {
+            if (generation !== this.move_generation) {
+                if (on_complete) on_complete();
+                return;
+            }
+
             const actor = meta.get_compositor_private();
 
             if (!actor) {
@@ -395,6 +414,7 @@ export class ShellWindow {
             if (this.is_maximized()) {
                 meta.unmaximize();
                 GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNMAXIMIZE_MOVE_DELAY_MS, () => {
+                    if (generation !== this.move_generation) return false;
                     queue_move();
                     return false;
                 });

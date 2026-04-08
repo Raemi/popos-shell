@@ -33,6 +33,11 @@ import type { Launcher } from './launcher.js';
 
 import { Fork } from './fork.js';
 
+const UNMAXIMIZE_MOVE_DELAY_MS = 32;
+const MONITOR_MOVE_VERIFY_DELAY_MS = 160;
+const MONITOR_MOVE_VERIFY_ATTEMPTS = 4;
+const RECT_EPSILON = 8;
+
 const display = global.display;
 const wim = global.window_manager;
 const wom = global.workspace_manager;
@@ -339,7 +344,7 @@ export class Ext extends Ecs.System<ExtEvent> {
                     // update on cross-monitor tile moves, so retry once shortly
                     // after the initial request if the final geometry mismatches.
                     if (!window.rect().eq(movement)) {
-                        this.retry_window_move(window, movement);
+                        this.retry_window_move(window, movement, window.move_generation);
                     }
 
                     this.monitors.insert(window.entity, [win.meta.get_monitor(), win.workspace_id()]);
@@ -364,7 +369,12 @@ export class Ext extends Ecs.System<ExtEvent> {
                         break;
 
                     case WindowEvent.Size:
-                        if (this.auto_tiler && !win.is_maximized() && !win.meta.is_fullscreen()) {
+                        if (
+                            this.auto_tiler &&
+                            !win.pending_monitor_move &&
+                            !win.is_maximized() &&
+                            !win.meta.is_fullscreen()
+                        ) {
                             this.auto_tiler.reflow(this, win.entity);
                         }
                         break;
@@ -1236,8 +1246,17 @@ export class Ext extends Ecs.System<ExtEvent> {
         return true;
     }
 
-    private retry_window_move(window: Window.ShellWindow, movement: Rectangular) {
-        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+    private retry_window_move(window: Window.ShellWindow, movement: Rectangular, generation: number) {
+        if (window.pending_move_retry !== null) {
+            try {
+                GLib.source_remove(window.pending_move_retry);
+            } catch (_) { }
+        }
+
+        window.pending_move_retry = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 80, () => {
+            window.pending_move_retry = null;
+            if (generation !== window.move_generation) return false;
+
             const actor = window.meta.get_compositor_private();
             if (!actor) return false;
 
@@ -1248,6 +1267,136 @@ export class Ext extends Ecs.System<ExtEvent> {
             window.meta.move_frame(true, x, y);
             return false;
         });
+    }
+
+    private rect_matches(actual: Rectangular, expected: Rectangular): boolean {
+        return (
+            Math.abs(actual.x - expected.x) <= RECT_EPSILON &&
+            Math.abs(actual.y - expected.y) <= RECT_EPSILON &&
+            Math.abs(actual.width - expected.width) <= RECT_EPSILON &&
+            Math.abs(actual.height - expected.height) <= RECT_EPSILON
+        );
+    }
+
+    private expected_rects_for_fork(fork: Fork): Array<[Entity, Rectangle]> {
+        const expected: Array<[Entity, Rectangle]> = [];
+        const forest = this.auto_tiler?.forest;
+        if (!forest) return expected;
+
+        const stack_updates = forest.stack_updates.length;
+        fork.measure(forest, this, fork.area.clone(), (entity, _parent, rect) => {
+            expected.push([entity, rect.clone()]);
+        });
+        forest.stack_updates.length = stack_updates;
+
+        return expected;
+    }
+
+    private complete_monitor_move(win: Window.ShellWindow, generation: number) {
+        const pending = win.pending_monitor_move;
+        if (!pending || pending.generation !== generation) return;
+
+        win.pending_monitor_move = null;
+        win.suppress_maximize_detach = false;
+        this.monitors.insert(win.entity, [pending.monitor, pending.workspace]);
+    }
+
+    private verify_monitor_move(win: Window.ShellWindow, generation: number, attempts: number = 0) {
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, MONITOR_MOVE_VERIFY_DELAY_MS, () => {
+            const pending = win.pending_monitor_move;
+            if (!pending || pending.generation !== generation) return false;
+            if (!this.auto_tiler) {
+                this.complete_monitor_move(win, generation);
+                return false;
+            }
+
+            if (win.meta.get_monitor() !== pending.monitor || win.workspace_id() !== pending.workspace) {
+                if (attempts < MONITOR_MOVE_VERIFY_ATTEMPTS) {
+                    this.verify_monitor_move(win, generation, attempts + 1);
+                } else {
+                    this.complete_monitor_move(win, generation);
+                }
+
+                return false;
+            }
+
+            const fork_entity = this.auto_tiler.attached.get(win.entity);
+            if (!fork_entity) {
+                if (attempts < MONITOR_MOVE_VERIFY_ATTEMPTS) {
+                    this.verify_monitor_move(win, generation, attempts + 1);
+                } else {
+                    this.complete_monitor_move(win, generation);
+                }
+
+                return false;
+            }
+
+            const fork = this.auto_tiler.forest.forks.get(fork_entity);
+            if (!fork) {
+                this.complete_monitor_move(win, generation);
+                return false;
+            }
+
+            const expected = this.expected_rects_for_fork(fork);
+            const mismatched = expected.some(([entity, rect]) => {
+                const window = this.windows.get(entity);
+                if (!window || !window.actor_exists()) return false;
+                return !this.rect_matches(window.rect(), rect);
+            });
+
+            if (mismatched) {
+                this.auto_tiler.tile(this, fork, fork.area.clone());
+
+                if (attempts < MONITOR_MOVE_VERIFY_ATTEMPTS) {
+                    this.verify_monitor_move(win, generation, attempts + 1);
+                } else {
+                    this.complete_monitor_move(win, generation);
+                }
+
+                return false;
+            }
+
+            this.complete_monitor_move(win, generation);
+            return false;
+        });
+    }
+
+    private begin_tiled_monitor_move(win: Window.ShellWindow, monitor: number) {
+        if (!this.auto_tiler) return;
+
+        const workspace = win.workspace_id();
+        const generation = ++win.monitor_move_generation;
+        win.pending_monitor_move = { generation, monitor, workspace };
+        win.suppress_maximize_detach = true;
+
+        const continue_move = () => {
+            const pending = win.pending_monitor_move;
+            if (!pending || pending.generation !== generation || !this.auto_tiler) return;
+
+            win.ignore_detach = true;
+            this.auto_tiler.detach_window(this, win.entity);
+            this.auto_tiler.attach_to_workspace(this, win, [monitor, workspace]);
+            this.verify_monitor_move(win, generation);
+        };
+
+        if (win.is_maximized()) {
+            win.meta.unmaximize();
+            GLib.timeout_add(GLib.PRIORITY_DEFAULT, UNMAXIMIZE_MOVE_DELAY_MS, () => {
+                const pending = win.pending_monitor_move;
+                if (!pending || pending.generation !== generation) return false;
+
+                if (win.is_maximized()) {
+                    this.verify_monitor_move(win, generation);
+                    return false;
+                }
+
+                continue_move();
+                return false;
+            });
+            return;
+        }
+
+        continue_move();
     }
 
     workspace_window_move(win: Window.ShellWindow, prev_monitor: number, next_monitor: number) {
@@ -1304,9 +1453,7 @@ export class Ext extends Ecs.System<ExtEvent> {
 
         if (next_monitor !== null) {
             if (this.auto_tiler && !this.is_floating(win)) {
-                win.ignore_detach = true;
-                this.auto_tiler.detach_window(this, win.entity);
-                this.auto_tiler.attach_to_workspace(this, win, [next_monitor[0], win.workspace_id()]);
+                this.begin_tiled_monitor_move(win, next_monitor[0]);
             } else {
                 this.workspace_window_move(win, prev_monitor, next_monitor[0]);
             }
@@ -1576,6 +1723,22 @@ export class Ext extends Ecs.System<ExtEvent> {
 
     /** Handle window maximization notifications */
     on_maximize(win: Window.ShellWindow) {
+        if (win.suppress_maximize_detach) {
+            if (!win.is_maximized()) {
+                this.register_fn(() => {
+                    const pending = win.pending_monitor_move;
+                    if (!pending) {
+                        win.suppress_maximize_detach = false;
+                        return;
+                    }
+
+                    this.verify_monitor_move(win, pending.generation);
+                });
+            }
+
+            return;
+        }
+
         if (win.is_maximized()) {
             // Raise maximized to top so stacks won't appear over them.
             const actor = win.meta.get_compositor_private();

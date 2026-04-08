@@ -5,6 +5,13 @@ Extension_UUID="pop-shell@system76.com"
 NESTED_DISPLAY="wayland-nested-$RANDOM"
 WORKDIR="$(pwd)"
 EXT_SRC="$WORKDIR/_build"
+DUMMY_MONITORS="${DUMMY_MONITORS:-1}"
+DUMMY_MODE_SPECS="${DUMMY_MODE_SPECS:-1920x1080@60}"
+
+if ! [[ "$DUMMY_MONITORS" =~ ^[0-9]+$ ]] || (( DUMMY_MONITORS < 1 )); then
+  echo "DUMMY_MONITORS must be a positive integer." >&2
+  exit 1
+fi
 
 if [[ ! -d "$EXT_SRC" ]]; then
   echo "Missing $EXT_SRC (build the extension first)." >&2
@@ -30,10 +37,13 @@ dbus-run-session -- bash -euxc "
 
   export GNOME_SHELL_EXTENSIONS_PATH='$XDG_DATA_HOME/gnome-shell/extensions'
 
-  export MUTTER_DEBUG_DUMMY_MODE_SPECS=1920x1080@60
-  export MUTTER_DEBUG_NUM_DUMMY_MONITORS=1
+  export MUTTER_DEBUG_DUMMY_MODE_SPECS='$DUMMY_MODE_SPECS'
+  export MUTTER_DEBUG_NUM_DUMMY_MONITORS='$DUMMY_MONITORS'
   export SHELL_DEBUG=all
   unset XDG_SESSION_ID
+
+  echo \"Nested shell dummy monitors requested: \$MUTTER_DEBUG_NUM_DUMMY_MONITORS (\$MUTTER_DEBUG_DUMMY_MODE_SPECS)\"
+  echo \"Note: gnome-shell --devkit may still expose only one visible monitor in nested mode.\"
 
   # Keep parent WAYLAND_DISPLAY intact so nested shell can connect to host compositor.
   # --wayland-display sets only the socket name exposed by the nested shell.
