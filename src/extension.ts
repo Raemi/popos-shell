@@ -1407,26 +1407,13 @@ export class Ext extends Ecs.System<ExtEvent> {
             // get the current window rect
             let rect = win.rect();
 
-            let h_ratio: number = 1;
-            let w_ratio: number = 1;
+            const h_ratio = next_area.height / prev_area.height;
+            const w_ratio = next_area.width / prev_area.width;
 
-            h_ratio = next_area.height / prev_area.height;
-            rect.height = rect.height * h_ratio;
-
-            w_ratio = next_area.width / prev_area.width;
+            rect.x = next_area.x + ((rect.x - prev_area.x) / prev_area.width) * next_area.width;
+            rect.y = next_area.y + ((rect.y - prev_area.y) / prev_area.height) * next_area.height;
             rect.width = rect.width * w_ratio;
-
-            if (next_area.x < prev_area.x) {
-                rect.x = ((next_area.x + rect.x - prev_area.x) / prev_area.width) * next_area.width;
-            } else if (next_area.x > prev_area.x) {
-                rect.x = (rect.x / prev_area.width) * next_area.width + next_area.x;
-            }
-
-            if (next_area.y < prev_area.y) {
-                rect.y = ((next_area.y + rect.y - prev_area.y) / prev_area.height) * next_area.height;
-            } else if (next_area.y > prev_area.y) {
-                rect.y = (rect.y / prev_area.height) * next_area.height + next_area.y;
-            }
+            rect.height = rect.height * h_ratio;
 
             if (this.auto_tiler) {
                 if (this.is_floating(win)) {
