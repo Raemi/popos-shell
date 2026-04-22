@@ -862,17 +862,17 @@ export function locate_monitor(
     if (direction === UP) {
         origin = [ref.x + ref.width / 2, ref.y];
         exclude = (rect: Rectangular) => {
-            return rect.y > ref.y;
+            return rect.y + rect.height > ref.y;
         };
     } else if (direction === DOWN) {
         origin = [ref.x + ref.width / 2, ref.y + ref.height];
-        exclude = (rect: Rectangular) => rect.y < ref.y;
+        exclude = (rect: Rectangular) => rect.y < ref.y + ref.height;
     } else if (direction === LEFT) {
         origin = [ref.x, ref.y + ref.height / 2];
-        exclude = (rect: Rectangular) => rect.x > ref.x;
+        exclude = (rect: Rectangular) => rect.x + rect.width > ref.x;
     } else {
         origin = [ref.x + ref.width, ref.y + ref.height / 2];
-        exclude = (rect: Rectangular) => rect.x < ref.x;
+        exclude = (rect: Rectangular) => rect.x < ref.x + ref.width;
     }
 
     let next: [number, number, Rectangular] | null = null;
