@@ -133,6 +133,14 @@ export class Fork {
         return this.is_horizontal() ? this.area.width : this.area.height;
     }
 
+    private clamp_length(left_length: number): number {
+        const fork_len = this.length();
+        const minimum = Math.min(256, fork_len / 2);
+        const maximum = fork_len - minimum;
+
+        return Math.round(Math.max(minimum, Math.min(maximum, left_length)));
+    }
+
     /** Replaces the association of a window in a fork with another */
     replace_window(ext: Ext, a: ShellWindow, b: ShellWindow): null | (() => void) {
         let closure = null;
@@ -202,8 +210,7 @@ export class Fork {
      * Ensures that the ratio is never smaller or larger than the constraints.
      */
     set_ratio(left_length: number): Fork {
-        const fork_len = this.is_horizontal() ? this.area.width : this.area.height;
-        const clamped = Math.round(Math.max(256, Math.min(fork_len - 256, left_length)));
+        const clamped = this.clamp_length(left_length);
         this.prev_length_left = clamped;
         this.length_left = clamped;
         return this;
@@ -237,7 +244,7 @@ export class Fork {
         }
 
         if (ratio) {
-            this.length_left = Math.round(ratio * this.length());
+            this.length_left = this.clamp_length(ratio * this.length());
             if (manually_moved) this.prev_ratio = ratio;
         } else if (manually_moved) {
             this.prev_ratio = this.length_left / this.length();
