@@ -128,7 +128,7 @@ export class Tiler {
             if (max_x === null || monitor.x + monitor.width > max_x) {
                 max_x = monitor.x + monitor.width;
             }
-            if (max_y === null || monitor.y + monitor.height < max_y) {
+            if (max_y === null || monitor.y + monitor.height > max_y) {
                 max_y = monitor.y + monitor.height;
             }
         }
