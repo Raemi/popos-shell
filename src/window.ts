@@ -680,8 +680,8 @@ export class ShellWindow {
                 const screen = workspace.get_work_area_for_monitor(this.meta.get_monitor());
 
                 if (screen) {
-                    width = Math.min(width, screen.x + screen.width);
-                    height = Math.min(height, screen.y + screen.height);
+                    width = Math.min(width, screen.x + screen.width - x);
+                    height = Math.min(height, screen.y + screen.height - y);
                 }
 
                 border.set_position(x, y);
