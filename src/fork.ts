@@ -253,20 +253,14 @@ export class Fork {
         }
 
         if (this.right) {
-            const [l, p, startpos] = this.is_horizontal() ? [WIDTH, XPOS, this.area.x] : [HEIGHT, YPOS, this.area.y];
+            const [l, p] = this.is_horizontal() ? [WIDTH, XPOS] : [HEIGHT, YPOS];
 
             let region = this.area.clone();
 
-            const half = this.area.array[l] / 2;
-
-            let length;
-            if (this.length_left > half - 32 && this.length_left < half + 32) {
-                length = half;
-            } else {
-                const diff = (startpos + this.length_left) % 32;
-                length = this.length_left - diff + (diff > 16 ? 32 : 0);
-                if (length == 0) length = 32;
-            }
+            // Do not quantize fork splits to coarse grid steps. Quantization can
+            // make constrained client sizes non-convergent (for example bouncing
+            // between requested 2624 and applied 2613 widths).
+            const length = Math.round(this.length_left);
 
             region.array[l] = length - ext.gap_inner_half;
 
