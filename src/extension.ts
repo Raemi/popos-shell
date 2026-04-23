@@ -2589,19 +2589,7 @@ export class Ext extends Ecs.System<ExtEvent> {
             }
         }
 
-        const [old_primary, old_displays] = this.displays;
-
-        const changes = new Map<number, number>();
-
-        // Records which display's windows were moved to what new display's ID
-        for (const [entity, w] of this.windows.iter()) {
-            if (!w.actor_exists()) continue;
-
-            this.monitors.with(entity, ([mon]) => {
-                const assignment = mon === old_primary ? primary_display : w.meta.get_monitor();
-                changes.set(mon, assignment);
-            });
-        }
+        const old_displays = this.displays[1];
 
         // Fetch a new list of monitors
         const updated = new Map();
@@ -2643,42 +2631,94 @@ export class Ext extends Ecs.System<ExtEvent> {
             (() => {
                 if (!this.auto_tiler) return;
 
-                const toplevels = new Array();
                 const assigned_monitors = new Set<number>();
+                const displays = this.displays[1];
 
-                for (const [old_mon, new_mon] of changes) {
-                    if (old_mon === new_mon) assigned_monitors.add(new_mon);
-                }
+                const overlap_area = (a: Rectangle, b: Rectangle): number => {
+                    const x = Math.max(a.x, b.x);
+                    const y = Math.max(a.y, b.y);
+                    const width = Math.min(a.x + a.width, b.x + b.width) - x;
+                    const height = Math.min(a.y + a.height, b.y + b.height) - y;
+                    return width > 0 && height > 0 ? width * height : 0;
+                };
+
+                const select_fork_monitor = (fork: Fork): number | null => {
+                    const candidates = new Map<number, number>();
+
+                    const score_window = (entity: Entity) => {
+                        const window = this.windows.get(entity);
+                        if (!window || !window.actor_exists()) return;
+
+                        const monitor = window.meta.get_monitor();
+                        if (!displays.has(monitor)) return;
+
+                        candidates.set(monitor, (candidates.get(monitor) ?? 0) + 1);
+                    };
+
+                    for (const win of forest.iter(fork.entity)) {
+                        if (win.inner.kind === 2) {
+                            score_window(win.inner.entity);
+                        } else if (win.inner.kind === 3) {
+                            for (const entity of win.inner.entities) {
+                                score_window(entity);
+                            }
+                        }
+                    }
+
+                    let selected: number | null = null;
+                    let selected_score = -1;
+                    for (const [monitor, score] of candidates) {
+                        if (
+                            selected === null ||
+                            score > selected_score ||
+                            (score === selected_score && monitor === fork.monitor)
+                        ) {
+                            selected = monitor;
+                            selected_score = score;
+                        }
+                    }
+
+                    if (selected !== null) return selected;
+
+                    if (displays.has(fork.monitor)) return fork.monitor;
+
+                    let best_overlap_monitor: number | null = null;
+                    let best_overlap_area = -1;
+                    for (const [monitor, display] of displays) {
+                        const area = overlap_area(fork.area, display.area);
+                        if (area > best_overlap_area) {
+                            best_overlap_monitor = monitor;
+                            best_overlap_area = area;
+                        }
+                    }
+
+                    if (best_overlap_monitor !== null) return best_overlap_monitor;
+                    if (displays.has(primary_display)) return primary_display;
+
+                    for (const monitor of displays.keys()) {
+                        return monitor;
+                    }
+
+                    return null;
+                };
 
                 for (const f of forest.forks.values()) {
                     if (f.is_toplevel) {
-                        toplevels.push(f);
-
                         let migration: null | [Fork, number, Rectangle, boolean] = null;
 
-                        const displays = this.displays[1];
+                        const new_monitor = select_fork_monitor(f);
+                        if (new_monitor === null) continue;
 
-                        for (const [old_monitor, new_monitor] of changes) {
-                            const display = displays.get(new_monitor);
+                        const display = displays.get(new_monitor);
+                        if (!display) continue;
 
-                            if (!display) continue;
-
-                            if (f.monitor === old_monitor) {
-                                if (old_monitor === new_monitor) {
-                                    continue;
-                                }
-
-                                f.monitor = new_monitor;
-                                f.workspace = 0;
-                                migration = [f, new_monitor, display.ws, true];
-                            }
-                        }
-
-                        if (!migration) {
-                            const display = displays.get(f.monitor);
-                            if (display) {
-                                migration = [f, f.monitor, display.ws, false];
-                            }
+                        if (new_monitor === f.monitor) {
+                            assigned_monitors.add(new_monitor);
+                            migration = [f, f.monitor, display.ws, false];
+                        } else {
+                            f.monitor = new_monitor;
+                            f.workspace = 0;
+                            migration = [f, new_monitor, display.ws, true];
                         }
 
                         if (migration) {
