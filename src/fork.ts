@@ -210,9 +210,11 @@ export class Fork {
      * Ensures that the ratio is never smaller or larger than the constraints.
      */
     set_ratio(left_length: number): Fork {
+        const fork_len = this.length();
         const clamped = this.clamp_length(left_length);
         this.prev_length_left = clamped;
         this.length_left = clamped;
+        if (fork_len > 0) this.prev_ratio = clamped / fork_len;
         return this;
     }
 

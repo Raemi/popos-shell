@@ -114,7 +114,7 @@ export class AutoTiler {
         }
 
         fork.area = fork.set_area(rect.clone());
-        fork.length_left = Math.round(fork.prev_ratio * fork.length());
+        fork.set_ratio(Math.round(fork.prev_ratio * fork.length()));
         this.tile(ext, fork, fork.area);
     }
 

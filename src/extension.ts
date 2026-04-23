@@ -388,7 +388,7 @@ export class Ext extends Ecs.System<ExtEvent> {
                             let attachment = this.auto_tiler.attached.get(win.entity);
                             if (attachment) {
                                 if (!win.meta.is_fullscreen()) {
-                                    let fork = this.auto_tiler.forest.forks.get(win.entity);
+                                    let fork = this.auto_tiler.forest.forks.get(attachment);
                                     if (fork) {
                                         this.auto_tiler.reflow(this, win.entity);
                                     }
@@ -1221,22 +1221,22 @@ export class Ext extends Ecs.System<ExtEvent> {
     movement_is_valid(win: Window.ShellWindow, movement: movement.Movement) {
         if ((movement & Movement.SHRINK) !== 0) {
             if ((movement & Movement.DOWN) !== 0) {
-                const w = this.focus_selector.up(this, win);
+                const w = this.focus_selector.up_monitor(this, win);
                 if (!w) return false;
                 const r = w.rect();
                 if (r.y + r.height > win.rect().y) return false;
             } else if ((movement & Movement.UP) !== 0) {
-                const w = this.focus_selector.down(this, win);
+                const w = this.focus_selector.down_monitor(this, win);
                 if (!w) return false;
                 const r = w.rect();
                 if (r.y + r.height < win.rect().y) return false;
             } else if ((movement & Movement.LEFT) !== 0) {
-                const w = this.focus_selector.right(this, win);
+                const w = this.focus_selector.right_monitor(this, win);
                 if (!w) return false;
                 const r = w.rect();
                 if (r.x + r.width < win.rect().x) return false;
             } else if ((movement & Movement.RIGHT) !== 0) {
-                const w = this.focus_selector.left(this, win);
+                const w = this.focus_selector.left_monitor(this, win);
                 if (!w) return false;
                 const r = w.rect();
                 if (r.x + r.width > win.rect().x) return false;
