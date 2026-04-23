@@ -2492,7 +2492,10 @@ export class Ext extends Ecs.System<ExtEvent> {
 
             if (!area || !work_area) return false;
 
-            return !(area.width === work_area.width && area.height === work_area.height);
+            if (area.width < 1 || area.height < 1) return false;
+            if (work_area.width < 1 || work_area.height < 1) return false;
+
+            return work_area.width <= area.width && work_area.height <= area.height;
         };
 
         function displays_ready(): boolean {
@@ -2580,11 +2583,16 @@ export class Ext extends Ecs.System<ExtEvent> {
         };
 
         function mark_for_reassignment(ext: Ext, fork: Ecs.Entity) {
-            for (const win of forest.iter(fork, node.NodeKind.WINDOW)) {
+            for (const win of forest.iter(fork)) {
                 if (win.inner.kind === 2) {
                     const entity = win.inner.entity;
                     const window = ext.windows.get(entity);
                     if (window) window.reassignment = true;
+                } else if (win.inner.kind === 3) {
+                    for (const entity of win.inner.entities) {
+                        const window = ext.windows.get(entity);
+                        if (window) window.reassignment = true;
+                    }
                 }
             }
         }
