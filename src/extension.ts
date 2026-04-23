@@ -2597,7 +2597,7 @@ export class Ext extends Ecs.System<ExtEvent> {
             }
         }
 
-        const old_displays = this.displays[1];
+        const [old_primary, old_displays] = this.displays;
 
         // Fetch a new list of monitors
         const updated = new Map();
@@ -2611,19 +2611,29 @@ export class Ext extends Ecs.System<ExtEvent> {
             updated.set(mon.index, { area, ws });
         }
 
+        const displays_match = (a: Map<number, Display>, b: Map<number, Display>): boolean => {
+            if (a.size !== b.size) return false;
+
+            for (const [monitor, current] of a) {
+                const next = b.get(monitor);
+                if (!next) return false;
+                if (!current.area.eq(next.area) || !current.ws.eq(next.ws)) return false;
+            }
+
+            return true;
+        };
+
         const forest = this.auto_tiler.forest;
-
-        if (old_displays.size === updated.size) {
-            update_tiling();
-
-            this.displays = [primary_display, updated];
-
-            return;
-        }
 
         this.displays = [primary_display, updated];
 
-        if (utils.map_eq(old_displays, updated)) {
+        if (workareas_only) {
+            update_tiling();
+            return;
+        }
+
+        if (old_primary === primary_display && displays_match(old_displays, updated)) {
+            update_tiling();
             return;
         }
 
