@@ -329,17 +329,11 @@ export class Ext extends Ecs.System<ExtEvent> {
                     let movement = this.movements.remove(window.entity);
                     if (!movement) return;
 
-                    let actor = window.meta.get_compositor_private();
-                    if (!actor) {
+                    if (!this.apply_window_move(window, movement)) {
                         this.auto_tiler?.detach_window(this, window.entity);
                         return;
                     }
 
-                    actor.remove_all_transitions();
-                    const { x, y, width, height } = movement;
-
-                    window.meta.move_resize_frame(true, x, y, width, height);
-                    window.meta.move_frame(true, x, y);
                     // Mutter may apply the monitor jump first and delay the size
                     // update on cross-monitor tile moves, so retry once shortly
                     // after the initial request if the final geometry mismatches.
@@ -973,6 +967,8 @@ export class Ext extends Ecs.System<ExtEvent> {
 
     on_tile_detach(win: Entity) {
         this.windows.with(win, (window) => {
+            this.clear_window_constraints(window);
+
             if (window.prev_rect && !window.ignore_detach) {
                 this.register(Events.window_move(this, window, window.prev_rect));
                 window.prev_rect = null;
@@ -1246,6 +1242,92 @@ export class Ext extends Ecs.System<ExtEvent> {
         return true;
     }
 
+    private clear_window_constraints(window: Window.ShellWindow) {
+        const constraints = (Meta as any).WindowConstraint;
+        const meta = window.meta as Meta.Window & {
+            override_constraints?: (top: any, left: any, right: any, bottom: any) => void;
+        };
+
+        if (!constraints || !meta.override_constraints) return;
+
+        meta.override_constraints(constraints.NONE, constraints.NONE, constraints.NONE, constraints.NONE);
+    }
+
+    private toplevel_area_for_window(window: Window.ShellWindow): Rectangle | null {
+        if (!this.auto_tiler) return null;
+
+        const forest = this.auto_tiler.forest;
+        let fork_entity = this.auto_tiler.attached.get(window.entity);
+        if (!fork_entity) return null;
+
+        let parent = forest.parents.get(fork_entity);
+        while (parent) {
+            fork_entity = parent;
+            parent = forest.parents.get(fork_entity);
+        }
+
+        return forest.forks.get(fork_entity)?.area ?? null;
+    }
+
+    private update_window_constraints(window: Window.ShellWindow, rect: Rectangular) {
+        const constraints = (Meta as any).WindowConstraint;
+        const meta = window.meta as Meta.Window & {
+            override_constraints?: (top: any, left: any, right: any, bottom: any) => void;
+        };
+
+        if (!constraints || !meta.override_constraints) return;
+
+        const area = this.toplevel_area_for_window(window);
+        if (!area) {
+            this.clear_window_constraints(window);
+            return;
+        }
+
+        const edge_constraint = (actual: number, expected: number) =>
+            Math.abs(actual - expected) <= RECT_EPSILON ? constraints.MONITOR : constraints.WINDOW;
+
+        meta.override_constraints(
+            edge_constraint(rect.y, area.y),
+            edge_constraint(rect.x, area.x),
+            edge_constraint(rect.x + rect.width, area.x + area.width),
+            edge_constraint(rect.y + rect.height, area.y + area.height),
+        );
+    }
+
+    private apply_window_move(window: Window.ShellWindow, movement: Rectangular): boolean {
+        const actor = window.meta.get_compositor_private();
+        if (!actor) return false;
+
+        const meta = window.meta as Meta.Window & {
+            move_to_monitor?: (monitor: number) => void;
+        };
+
+        actor.remove_all_transitions();
+
+        const monitor_rect = Mtk
+            ? new Mtk.Rectangle({ x: movement.x, y: movement.y, width: movement.width, height: movement.height })
+            : new Meta.Rectangle({ x: movement.x, y: movement.y, width: movement.width, height: movement.height });
+        try {
+            const target_monitor = display.get_monitor_index_for_rect(monitor_rect);
+            if (target_monitor >= 0 && meta.move_to_monitor) {
+                meta.move_to_monitor(target_monitor);
+            }
+        } catch (err) {
+            log.warn(`apply_window_move: move_to_monitor failed: ${err}`);
+        }
+
+        try {
+            this.update_window_constraints(window, movement);
+        } catch (err) {
+            log.warn(`apply_window_move: override_constraints failed: ${err}`);
+        }
+
+        const { x, y, width, height } = movement;
+        meta.move_frame(true, x, y);
+        meta.move_resize_frame(true, x, y, width, height);
+        return true;
+    }
+
     private retry_window_move(window: Window.ShellWindow, movement: Rectangular, generation: number) {
         if (window.pending_move_retry !== null) {
             try {
@@ -1257,14 +1339,8 @@ export class Ext extends Ecs.System<ExtEvent> {
             window.pending_move_retry = null;
             if (generation !== window.move_generation) return false;
 
-            const actor = window.meta.get_compositor_private();
-            if (!actor) return false;
-
             // Re-issue the full move+resize after the monitor transition settles.
-            actor.remove_all_transitions();
-            const { x, y, width, height } = movement;
-            window.meta.move_resize_frame(true, x, y, width, height);
-            window.meta.move_frame(true, x, y);
+            this.apply_window_move(window, movement);
             return false;
         });
     }

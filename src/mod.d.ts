@@ -309,6 +309,8 @@ declare namespace Meta {
         maximize(flags: MaximizeFlags): void;
         move_frame(user_op: boolean, x: number, y: number): void;
         move_resize_frame(user_op: boolean, x: number, y: number, w: number, h: number): boolean;
+        move_to_monitor?(monitor: number): void;
+        override_constraints?(top: any, left: any, right: any, bottom: any): void;
         raise(): void;
         skip_taskbar: boolean;
         unmaximize(): void;
