@@ -10,7 +10,11 @@ const { Ok, Err } = result;
 const { Error } = error;
 
 export function is_wayland(): boolean {
-    return Meta.is_wayland_compositor();
+    const is_wayland_compositor = (Meta as any).is_wayland_compositor;
+    if (typeof is_wayland_compositor === 'function') return is_wayland_compositor();
+
+    const getenv = (GLib as any).getenv;
+    return getenv('WAYLAND_DISPLAY') !== null || getenv('XDG_SESSION_TYPE') === 'wayland';
 }
 
 export function block_signal(object: GObject.Object, signal: SignalID) {

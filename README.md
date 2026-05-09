@@ -67,7 +67,7 @@ Use the branch corresponding to your GNOME Shell version (`git checkout branch_n
 - **GNOME 3.36 through 41:** Use the `master_focal` branch.
 - **GNOME 42 through 44:** Use the `master_jammy` branch.
 - **GNOME 45:** Use the `master_mantic` branch.
-- **GNOME 46+:** Use the `master_noble` branch.
+- **GNOME 46 through 50:** Use the `master_noble` branch.
 
 GNU Make and TypeScript are also required to build the project.
 

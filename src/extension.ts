@@ -3143,6 +3143,10 @@ let default_getwindowlist_windowswitcher: any;
 let default_getcaption_windowpreview: any;
 let default_getcaption_workspace: any;
 
+function has_method(target: any, method: string): boolean {
+    return target != null && typeof target[method] === 'function';
+}
+
 /**
  * Decorates the default gnome-shell workspace/overview handling
  * of skip_task_bar. And have those window types included in pop-shell.
@@ -3163,7 +3167,7 @@ let default_getcaption_workspace: any;
  */
 function _show_skip_taskbar_windows(ext: Ext) {
     // Handle the overview
-    if (!default_isoverviewwindow_ws) {
+    if (!default_isoverviewwindow_ws && has_method(Workspace.prototype, '_isOverviewWindow')) {
         default_isoverviewwindow_ws = Workspace.prototype._isOverviewWindow;
         Workspace.prototype._isOverviewWindow = function (win: any) {
             let meta_win = win;
@@ -3176,7 +3180,7 @@ function _show_skip_taskbar_windows(ext: Ext) {
     if (GNOME_VERSION?.startsWith('3.36')) {
         // imports.ui.windowPreview is not in 3.36,
         // _getCaption() is still in workspace.js
-        if (!default_getcaption_workspace) {
+        if (!default_getcaption_workspace && has_method(Workspace.prototype, '_getCaption')) {
             default_getcaption_workspace = Workspace.prototype._getCaption;
             // 3.36 _getCaption
             Workspace.prototype._getCaption = function () {
@@ -3189,7 +3193,7 @@ function _show_skip_taskbar_windows(ext: Ext) {
             };
         }
     } else {
-        if (!default_getcaption_windowpreview) {
+        if (!default_getcaption_windowpreview && has_method(WindowPreview.prototype, '_getCaption')) {
             default_getcaption_windowpreview = WindowPreview.prototype._getCaption;
             log.debug(`override workspace._getCaption`);
             // 3.38 _getCaption
@@ -3204,7 +3208,7 @@ function _show_skip_taskbar_windows(ext: Ext) {
     }
 
     // Handle the workspace thumbnail
-    if (!default_isoverviewwindow_ws_thumbnail) {
+    if (!default_isoverviewwindow_ws_thumbnail && has_method(WorkspaceThumbnail.prototype, '_isOverviewWindow')) {
         default_isoverviewwindow_ws_thumbnail = WorkspaceThumbnail.prototype._isOverviewWindow;
         WorkspaceThumbnail.prototype._isOverviewWindow = function (win: any) {
             let meta_win = win.get_meta_window();
@@ -3269,13 +3273,13 @@ function _show_skip_taskbar_windows(ext: Ext) {
     // }
 
     // Handle switch-windows
-    if (!default_getwindowlist_windowswitcher) {
+    if (!default_getwindowlist_windowswitcher && has_method(WindowSwitcherPopup.prototype, '_getWindowList')) {
         default_getwindowlist_windowswitcher = WindowSwitcherPopup.prototype._getWindowList;
         WindowSwitcherPopup.prototype._getWindowList = function () {
             let workspace = null;
 
             // Use local settings instance since this._settings may be null in GNOME 49+
-            let settings = new Gio.Settings({ schema_id: 'org.gnome.shell.app-switcher' });
+            let settings = new Gio.Settings({ schema_id: 'org.gnome.shell.window-switcher' });
             if (settings.get_boolean('current-workspace-only')) {
                 let workspaceManager = global.workspace_manager;
                 workspace = workspaceManager.get_active_workspace();

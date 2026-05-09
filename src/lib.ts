@@ -44,9 +44,13 @@ export function bench<T>(name: string, callback: () => T): T {
 }
 
 export function current_monitor(): Rectangle {
-    return rectangle.Rectangle.from_meta(
-        global.display.get_monitor_geometry(global.display.get_current_monitor()) as Rectangular,
-    );
+    const monitor_count = global.display.get_n_monitors();
+    const current = global.display.get_current_monitor();
+    const primary = global.display.get_primary_monitor();
+    const monitor = current >= 0 && current < monitor_count ? current : primary >= 0 && primary < monitor_count ? primary : 0;
+    const geometry = monitor_count > 0 ? global.display.get_monitor_geometry(monitor) : null;
+
+    return rectangle.Rectangle.from_meta((geometry ?? { x: 0, y: 0, width: 0, height: 0 }) as Rectangular);
 }
 
 // Fetch rectangle that represents the cursor
